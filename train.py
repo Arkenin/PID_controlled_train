@@ -1,14 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Feb 24 14:31:37 2021
+Created on Wed Mar  3 15:36:05 2021
 
 @author: arkni
+Train class
+
 """
-from PID import PID
-import math
-
-
-#%% Klasa pociągu. Pociąg z klasą
 
 class Train():
     
@@ -18,7 +15,7 @@ class Train():
         self.cars_no = 11
         self.a = 0
         self.aBefore = 0
-        self.v = 0
+        self.v = 10
         self.s = 0
         self.dt = 0.1
         self.F = 0
@@ -40,7 +37,7 @@ class Train():
     def iteration(self, timeCurrent):
         self.timeCurrent = timeCurrent
         if self.timeCurrent <= self.timeBefore:
-            print("Nothing happend")
+            # print("Nothing happend")
             return 0
         self.dt = self.timeCurrent - self.timeBefore
         self.control()
@@ -113,119 +110,48 @@ class Train():
         return (self.a - self.aBefore)/self.dt
         
         
-    
-#%% Obliczenia
-
-reg = ""
-emu = Train()
-print(emu)
-print("Opór dynamiczny: {:.2f}".format(emu.resist_dyn()))
-tv = []
-sv = []
-vv = []
-zv = []
-rv = []
-
-pid = PID(P = 40, I=0.2, D=0.0, current_time=0)
-pid_poz = PID(P = 8.0, I=2.0, D=100.0, current_time=0)
-pid_acc = PID(P = 25, I=100.00, D=200, current_time=0)
-
-
-pid.SetPoint=30.0
-pid.setSampleTime(0.1)
-pid.setWindup(20.0)
-
-next_stop = 10000.0
-
-pid_poz.setSampleTime(0.1)
-pid_poz.setWindup(10.0)
-pid_poz.setPoint = 0
-
-pid_acc.setSampleTime(0.1)
-pid_acc.setWindup(50.0)
-# predTime = 150
-predAcc = -0.6
-predActive = 0
-ile = 0
-for i in range(4500):
-    t = i/10
-    if i > 800:
-        pass
-        #pid.SetPoint=30.0
+#%% Calculations
+def train_ride(vect_ster, save = False, stats = []):
         
-    pid.update(emu.v, current_time=t)
+    optimu = Train()
 
-    pid_acc.update(emu.a, current_time=t)
-    # predCalc = emu.s + emu.v*predTime + 0.5*predAcc*predTime**2
-    predCalc = emu.s + (emu.v**2 - 2*predAcc*0)/(-predAcc*2)
+    # print("Opór dynamiczny: {:.2f}".format(optimu.resist_dyn()))
+    if save:
+        tv = []
+        sv = []
+        vv = []
     
-    # predTime = (-emu.v + (emu.v**2 + 2*predAcc*1000)**0.5)/predAcc
-    
-    if predCalc > next_stop - 3 and (predActive == 0):
-        ile+=(emu.v**2 - 2*predAcc*0)/(predAcc*2)
-        appPredCalc = predCalc
-        predTime = -emu.v/predAcc
-        predActive = 1
-        predVel = emu.v
-        predDt = emu.dt
-        predSets = []
-        predDis = emu.s
-        predIter = 0
-        predReal = []
+    for i in range(100):
+        t = i/10
         
-        for j in range(round(predTime/emu.dt)):
-            predDis += predVel*predDt + 0.5*predAcc*predDt**2
-            predVel += predAcc*predDt
-            predSets.append(predDis)
-        predLen = j+1
-    if not predActive == 1 :
-        reg_pos = 0
-        emu.pid_output = pid.output
-        reg = "spe"
-        zv.append(pid.SetPoint)
-        s_set = 0
-    else:
-
-        # pid_poz.SetPoint = next_stop
-        # if reg_pos == 0:
-        #     dt = emu.dt
-        #     czas = 70
-        #     reg_pos = 1
-        #     t_start = t
-        #     v = emu.v
-        #     s_set = emu.s
-        #     a = -0.6
-        # s_set += v*dt + 0.5*a*dt
-        # v += a*dt
-        # if v < 0:
-        #     v = 0
-        if predIter < predLen:
-            pid_poz.SetPoint = predSets[predIter]
-            predIter += 1
-            pid_poz.update(emu.s, current_time=t)
             
-            emu.pid_output = pid_poz.output
-            reg = "pos"
-            zv.append(pid_poz.SetPoint)
-            predReal.append(emu.s)
-        else:
-            predActive = 2
-    
-    
-    emu.iteration(t)
-    tv.append(t)
-    sv.append(emu.s)
-    vv.append(emu.v)
-    rv.append(s_set)
-    
+        optimu.pid_output = vect_ster[i]
+        optimu.iteration(t)
+        if save:
+            tv.append(t)
+            sv.append(optimu.s)
+            vv.append(optimu.v)
+    if save:
+        stats.append(tv)
+        stats.append(sv)
+        stats.append(vv)
+        
+    return (optimu.v - 0)**2 + ((optimu.s - 100)/10)**2
 
-    if i%10 == 0:
-        pass
-        # print(emu, "t: {}, out: {:.2f} sil: {:.1f}, {}, Cal:{:.1f}".format(t, emu.pid_output, emu.Fmot/1000,reg,predCalc))
-    
-    if emu.jerk_calc()>0.5:
-        print(emu, "t: {}, j: {:.2f} sil: {:.1f}, {}".format(t, emu.jerk_calc(), emu.Fmot/1000, reg))
-    
+#%%Minimize
+import numpy as np
+from scipy.optimize import minimize
+
+vect_ster = np.zeros(100)
+res = minimize(train_ride, vect_ster, method='Nelder-Mead', options={'xatol': 1e-8, 'disp': True})
+
+#%% After res
+
+stats = []
+train_ride(res.x, save = True, stats=stats)
+tv, sv, vv = stats
+
+
 #%% Plotting
 import matplotlib
 import matplotlib.pyplot as plt
@@ -239,11 +165,10 @@ ax2 = fig.add_subplot(122)
 
 ax.plot(tv, vv)
 
-ax2.plot(predSets)
-ax2.plot(predReal)
-
-# ax2.set_xlim([330, 500])
-# ax2.set_ylim([9800, 10500])
+ax2.plot(tv, sv)
+ax2.plot(tv, vv)
+#ax2.set_xlim([330, 500])
+#ax2.set_ylim([9800, 10500])
 
 
 
@@ -256,11 +181,3 @@ ax2.plot(predReal)
 #ax.grid()
 
 plt.show()
-
-
-
-
-
-
-
-
