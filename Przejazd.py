@@ -6,7 +6,7 @@ Created on Wed Feb 24 14:31:37 2021
 """
 from PID import PID
 import math
-
+power = [900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 882, 860, 840, 820, 802, 784, 767, 751, 735, 720, 706, 692, 678, 666, 653, 641, 630, 619, 608, 598, 588, 578, 569, 560, 551, 543, 535, 527, 519, 511, 504, 497, 490, 483, 477, 470, 464, 458, 452, 447, 441, 436, 430, 425, 420, 415, 410, 406, 401, 396, 392, 388, 383, 379, 375, 371, 368, 364, 360, 356, 353, 349, 346, 343, 339, 336, 333, 330, 327, 324, 321, 318, 315, 312, 309, 307, 304, 302, 299, 296, 294, 292, 289, 287, 285, 282, 280, 278, 276, 273, 271, 269, 267, 265, 263, 261, 259, 258, 256, 254, 252, 250, 248, 247, 245, 243, 242, 240, 238, 237, 235, 234, 232, 231, 229, 228, 226, 225, 223, 222, 221, 219, 218, 216, 215, 214, 213, 211, 210, 209, 208]
 
 #%% Klasa pociągu. Pociąg z klasą
 
@@ -18,8 +18,9 @@ class Train():
         self.cars_no = 11
         self.a = 0
         self.aBefore = 0
-        self.v = 0
+        self.v = 10
         self.s = 0
+        self.t = 0
         self.dt = 0.1
         self.F = 0
         self.Fmot = 0
@@ -105,86 +106,183 @@ class Train():
             self.Fmot -= 70000
         while self.Fmot - self.FmotBefore < -70000:
             self.Fmot += 70000
-            
+        self.Fmot = min(power[round(emu.v*1.0)]*1000, self.Fmot)
         if False: #Turning off controll
             self.Fmot = 0
         
     def jerk_calc(self):
         return (self.a - self.aBefore)/self.dt
         
-        
+#%% Regulator do pociągu
+class TrainController:
     
+    def __init__(self, emu):
+        self.predActive = 0
+        self.next_stop = -1
+        self.actualLimit = 0
+        
+        
+        self.pid = PID(P = 40, I=0.2, D=0.0, current_time=0)
+        self.pid.SetPoint = 30.0
+        self.pid.setSampleTime(0.1)
+        self.pid.setWindup(20.0)
+        
+        
+        self.pid_poz = PID(P = 40.0, I=3.0, D=200.0, current_time=0)
+        self.pid_poz.setSampleTime(0.1)
+        self.pid_poz.setWindup(10.0)
+        self.pid_poz.setPoint = 0
+        
+        self.predIter = 0
+        self.predLen = 0
+        
+        #Data collection:
+        self.tv = []
+        self.sv = []
+        self.vv = []
+        self.zv = []
+        self.predReal = []
+        self.predSets = []
+    
+    def predict(self, emu, predAcc = -0.6):
+            
+        self.predAcc = predAcc
+        self.predCalc = emu.s + (emu.v**2 - 2*predAcc*0)/(-predAcc*2)
+            
+        if self.predCalc > self.next_stop - 3 and (self.predActive == 0):
+    
+            self.predActive = 1
+            self.predIter = 0
+            self.predVel = emu.v
+            self.predTime = -emu.v/self.predAcc
+            self.predDis = emu.s
+            self.predSets = []
+            self.predReal = []
+
+
+            
+            for j in range(round(self.predTime/emu.dt)):
+                self.predDis += self.predVel*emu.dt + 0.5*self.predAcc*emu.dt**2
+                self.predVel += self.predAcc*emu.dt
+                self.predSets.append(self.predDis)
+            self.predLen = j+1
+            
+    def control(self, emu):
+        self.predict(emu)
+        if  self.predActive == 0:
+            if emu.s > self.nextLimit[0]:
+                self.pid.SetPoint = self.nextLimit[1]
+                try:
+                    self.nextLimit = self.limits.pop(0)
+                except:
+                    print("No limits for you")
+                    self.nextLimit[0] = 99999999
+                    pass
+                
+            self.pid.update(emu.v, current_time=emu.timeCurrent)
+            emu.pid_output = self.pid.output 
+            
+        if not self.predActive == 1:
+
+            self.zv.append(self.pid.SetPoint)
+
+        
+            if self.predIter < self.predLen:
+                self.pid_poz.SetPoint = self.predSets[self.predIter]
+                self.predIter += 1
+                self.pid_poz.update(emu.s, current_time=emu.timeCurrent)
+                
+                emu.pid_output = self.pid_poz.output
+                self.zv.append(self.pid_poz.SetPoint)
+                self.predReal.append(emu.s)
+        else:
+            try:
+                self.next_stop = self.stops.pop(0)
+            except:
+                self.next_stop = 999999999
+            self.predActive = 0
+            
+        self.tv.append(emu.timeCurrent)
+        self.sv.append(emu.s)
+        self.vv.append(emu.v)
+    def set_stops(self, stops):
+        self.stops = stops
+        self.next_stop = self.stops.pop(0)
+    def set_limits(self, limits):
+        self.limits = limits
+        self.actualLimit = self.limits.pop(0)
+        self.pid.SetPoint = self.actualLimit[1]
+        self.nextLimit = self.limits.pop(0)
+        
+        
 #%% Obliczenia
 
 reg = ""
 emu = Train()
+emuCtrl = TrainController(emu)
+emuCtrl.set_stops([10000,17000,25000])
+emuCtrl.set_limits([[0,30],[2000,40],[8000,20],[15000,30],[27000,0]])
+
+
+
+    
 print(emu)
 print("Opór dynamiczny: {:.2f}".format(emu.resist_dyn()))
-tv = []
-sv = []
-vv = []
-zv = []
-rv = []
-
-pid = PID(P = 40, I=0.2, D=0.0, current_time=0)
-pid_poz = PID(P = 8.0, I=2.0, D=100.0, current_time=0)
-pid_acc = PID(P = 25, I=100.00, D=200, current_time=0)
+# tv = []
+# sv = []
+# vv = []
+# zv = []
+# rv = []
 
 
-pid.SetPoint=30.0
-pid.setSampleTime(0.1)
-pid.setWindup(20.0)
 
-next_stop = 10000.0
 
-pid_poz.setSampleTime(0.1)
-pid_poz.setWindup(10.0)
-pid_poz.setPoint = 0
+# pid = PID(P = 40, I=0.2, D=0.0, current_time=0)
+# pid.SetPoint=30.0
+# pid.setSampleTime(0.1)
+# pid.setWindup(20.0)
 
-pid_acc.setSampleTime(0.1)
-pid_acc.setWindup(50.0)
-# predTime = 150
-predAcc = -0.6
-predActive = 0
-ile = 0
-for i in range(4500):
+
+# pid_poz = PID(P = 8.0, I=2.0, D=100.0, current_time=0)
+# pid_poz.setSampleTime(0.1)
+# pid_poz.setWindup(10.0)
+# pid_poz.setPoint = 0
+
+
+
+
+
+for i in range(13000):
     t = i/10
-    if i > 800:
-        pass
-        #pid.SetPoint=30.0
-        
-    pid.update(emu.v, current_time=t)
 
-    pid_acc.update(emu.a, current_time=t)
-    # predCalc = emu.s + emu.v*predTime + 0.5*predAcc*predTime**2
-    predCalc = emu.s + (emu.v**2 - 2*predAcc*0)/(-predAcc*2)
-    
-    # predTime = (-emu.v + (emu.v**2 + 2*predAcc*1000)**0.5)/predAcc
-    
-    if predCalc > next_stop - 3 and (predActive == 0):
-        ile+=(emu.v**2 - 2*predAcc*0)/(predAcc*2)
-        appPredCalc = predCalc
-        predTime = -emu.v/predAcc
-        predActive = 1
-        predVel = emu.v
-        predDt = emu.dt
-        predSets = []
-        predDis = emu.s
-        predIter = 0
-        predReal = []
         
-        for j in range(round(predTime/emu.dt)):
-            predDis += predVel*predDt + 0.5*predAcc*predDt**2
-            predVel += predAcc*predDt
-            predSets.append(predDis)
-        predLen = j+1
-    if not predActive == 1 :
-        reg_pos = 0
-        emu.pid_output = pid.output
-        reg = "spe"
-        zv.append(pid.SetPoint)
-        s_set = 0
-    else:
+    # pid.update(emu.v, current_time=t)
+
+    # predCalc = emu.s + (emu.v**2 - 2*predAcc*0)/(-predAcc*2)
+        
+    # if predCalc > next_stop - 3 and (predActive == 0):
+
+    #     predTime = -emu.v/predAcc
+    #     predActive = 1
+    #     predVel = emu.v
+    #     predDt = emu.dt
+    #     predSets = []
+    #     predDis = emu.s
+    #     predIter = 0
+    #     predReal = []
+        
+    #     for j in range(round(predTime/emu.dt)):
+    #         predDis += predVel*predDt + 0.5*predAcc*predDt**2
+    #         predVel += predAcc*predDt
+    #         predSets.append(predDis)
+    #     predLen = j+1
+    # if not predActive == 1 :
+    #     reg_pos = 0
+    #     emu.pid_output = pid.output
+    #     reg = "spe"
+    #     zv.append(pid.SetPoint)
+    #     s_set = 0
+    # else:
 
         # pid_poz.SetPoint = next_stop
         # if reg_pos == 0:
@@ -199,31 +297,30 @@ for i in range(4500):
         # v += a*dt
         # if v < 0:
         #     v = 0
-        if predIter < predLen:
-            pid_poz.SetPoint = predSets[predIter]
-            predIter += 1
-            pid_poz.update(emu.s, current_time=t)
+    #     if predIter < predLen:
+    #         pid_poz.SetPoint = predSets[predIter]
+    #         predIter += 1
+    #         pid_poz.update(emu.s, current_time=t)
             
-            emu.pid_output = pid_poz.output
-            reg = "pos"
-            zv.append(pid_poz.SetPoint)
-            predReal.append(emu.s)
-        else:
-            predActive = 2
+    #         emu.pid_output = pid_poz.output
+    #         reg = "pos"
+    #         zv.append(pid_poz.SetPoint)
+    #         predReal.append(emu.s)
+    #     else:
+    #         predActive = 2
     
-    
+    emuCtrl.control(emu)
     emu.iteration(t)
-    tv.append(t)
-    sv.append(emu.s)
-    vv.append(emu.v)
-    rv.append(s_set)
+    # tv.append(t)
+    # sv.append(emu.s)
+    # vv.append(emu.v)
+
     
 
-    if i%10 == 0:
-        pass
-        # print(emu, "t: {}, out: {:.2f} sil: {:.1f}, {}, Cal:{:.1f}".format(t, emu.pid_output, emu.Fmot/1000,reg,predCalc))
+    if i%10 == 0 and i:
+        print(emu, "t: {}, out: {:.2f} sil: {:.1f}, {}, Cal:{:.1f}, S:{}".format(t, emu.pid_output, emu.Fmot/1000,reg,emuCtrl.predCalc,emuCtrl.predActive))
     
-    if emu.jerk_calc()>0.5:
+    if emu.jerk_calc()>0.6:
         print(emu, "t: {}, j: {:.2f} sil: {:.1f}, {}".format(t, emu.jerk_calc(), emu.Fmot/1000, reg))
     
 #%% Plotting
@@ -231,29 +328,32 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 # Data for plotting
-fig = plt.figure(figsize=(12, 6))
+fig = plt.figure(figsize=(12, 6), dpi=300)
 
 ax = fig.add_subplot(121)
 ax2 = fig.add_subplot(122)
 
 
-ax.plot(tv, vv)
+ax.plot(emuCtrl.tv, emuCtrl.vv)
 
-ax2.plot(predSets)
-ax2.plot(predReal)
+ax2.plot(emuCtrl.predSets,linewidth=3)
+ax2.plot(emuCtrl.predReal,'--',linewidth=2)
 
-# ax2.set_xlim([330, 500])
-# ax2.set_ylim([9800, 10500])
+# ax2.set_xlim([1000, 1500])
+# ax2.set_ylim([24000, 25500])
 
 
 
 #fig.plot(tv, zv)
 
+ax.set(xlabel='time (s)', ylabel='velocity (m/s)',
+      title='Train velocity')
 
-
-#plt.set(xlabel='time (s)', ylabel='distance (m)',
-#      title='Przejazd teoretyczny')
-#ax.grid()
+ax2.set(xlabel='samples (-)', ylabel='distance (m)',
+      title='Last braking')
+ax.grid()
+ax2.grid()
+ax2.legend(["Trajectory","Measurement"])
 
 plt.show()
 
