@@ -98,7 +98,7 @@ class Train():
         if self.pid_output > 100:
             self.pid_output = 100
         elif self.pid_output < -100:
-            self.pid_output = -100
+            self.pid_output = -1000000000000
         
         
         self.Fmot = self.pid_output * 9000 # 9000N/100 * (-100,100)%
