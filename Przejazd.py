@@ -8,7 +8,7 @@ from PID import PID
 import math
 from data_loco import profile, powerLookup, curves, limits, stops
 
-emuPowerLookup = [900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 882, 860, 840, 820, 802, 784, 767, 751, 735, 720, 706, 692, 678, 666, 653, 641, 630, 619, 608, 598, 588, 578, 569, 560, 551, 543, 535, 527, 519, 511, 504, 497, 490, 483, 477, 470, 464, 458, 452, 447, 441, 436, 430, 425, 420, 415, 410, 406, 401, 396, 392, 388, 383, 379, 375, 371, 368, 364, 360, 356, 353, 349, 346, 343, 339, 336, 333, 330, 327, 324, 321, 318, 315, 312, 309, 307, 304, 302, 299, 296, 294, 292, 289, 287, 285, 282, 280, 278, 276, 273, 271, 269, 267, 265, 263, 261, 259, 258, 256, 254, 252, 250, 248, 247, 245, 243, 242, 240, 238, 237, 235, 234, 232, 231, 229, 228, 226, 225, 223, 222, 221, 219, 218, 216, 215, 214, 213, 211, 210, 209, 208]
+emuPowerLookupTest = [900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 882, 860, 840, 820, 802, 784, 767, 751, 735, 720, 706, 692, 678, 666, 653, 641, 630, 619, 608, 598, 588, 578, 569, 560, 551, 543, 535, 527, 519, 511, 504, 497, 490, 483, 477, 470, 464, 458, 452, 447, 441, 436, 430, 425, 420, 415, 410, 406, 401, 396, 392, 388, 383, 379, 375, 371, 368, 364, 360, 356, 353, 349, 346, 343, 339, 336, 333, 330, 327, 324, 321, 318, 315, 312, 309, 307, 304, 302, 299, 296, 294, 292, 289, 287, 285, 282, 280, 278, 276, 273, 271, 269, 267, 265, 263, 261, 259, 258, 256, 254, 252, 250, 248, 247, 245, 243, 242, 240, 238, 237, 235, 234, 232, 231, 229, 228, 226, 225, 223, 222, 221, 219, 218, 216, 215, 214, 213, 211, 210, 209, 208]
 
 #%% Klasa pociągu. Pociąg z klasą
 
@@ -23,7 +23,8 @@ class Train():
         self.cars_no = 11
         self.a = 0
         self.aBefore = 0
-        self.v = 10
+        self.v = 0
+        self.vkmh = 0
         self.s = 0
         self.t = 0
         self.dt = 0.1
@@ -34,10 +35,11 @@ class Train():
         self.Fstat = 0
         self.timeCurrent = 0
         self.timeBefore = 0
-        self.pid_output = 0 #from 0 to 100. about 50 is no braking neither no speeding up
+        self.pid_output = 0 #from -100 to 100
         
         self.powerLookup = []
         self.profileActual = 0
+        self.curveActive = False
         
     def __str__(self):
         '''zaprezentowanie parametrów pociagu'''
@@ -67,25 +69,51 @@ class Train():
         
     
     def resist_dyn(self):
-        self.Fdyn = ((6.5+(1.5*(self.v*0.36)))*self.mass/1000)+(150*self.axles_no) + 10*(2.7+self.cars_no)*((self.v*0.36)**2)
+        # Resistance EMU or LOCO
+        # self.Fdyn = ((6.5+(1.5*(self.v*0.36)))*self.mass/1000)+(150*self.axles_no) + 10*(2.7+self.cars_no)*((self.v*0.36)**2)
+        self.Fdyn = ((1.2+((self.vkmh)**2/4000))*self.mass/1000)*10; 
         return self.Fdyn
         pass
     
     def resist_stat(self, profile = 0):
         '''resistance from uphill,downhill'''
-        return 9.8105 * self.profileActual * (self.mass)
-        pass
+        if self.curveActive:
+            pass
+            return 9.8105 * (self.profileActual + (690/self.curveR)/1000) * (self.mass)
+        else:
+            return 9.8105 * (self.profileActual) * (self.mass)
+
     
     def check_env(self):
         #Checking profile
-        if emu.s > self.profileNext[0]:
+        if self.s > self.profileNext[0]:
             self.profileStart = self.profileNext[0]
             self.profileActual = self.profileNext[1]
             try:
                 self.profileNext = self.profile.pop(0)
             except:
                 self.profileActual = 0
+                self.profileNext[0] = 99999999
         #Checking curve
+        
+        if self.s > self.curveNext[0]:
+            self.curveStart = self.curveNext[0]
+            self.curveStop = self.curveNext[1]
+            self.curveR = self.curveNext[2]
+            self.curveActive = True
+            try:
+                self.curveNext = self.curves.pop(0)
+            except:
+                self.curveR = 0
+                self.curveNext[0] = 999999999
+                self.curveStop = 999999999
+                self.curveActive = False
+            
+        elif self.s > self.curveStop:
+            self.curveActive = False
+
+        
+        
         pass
         
     def set_power_lookup(self, powerLookup):
@@ -106,12 +134,18 @@ class Train():
     def set_curves(self, curves):
         self.curves = curves
         try:
-            curves_actual = self.curves.pop(0)
-            self.curvesStart = curves_actual[0]
-            self.curvesStop = curves_actual[1]
-            self.curvesR = curves_actual[2]
+            # tmp = self.curves.pop(0)
+            # self.curveStart = tmp[0]
+            # self.curveStop = tmp[1]
+            # self.curveR = tmp[2]
+            self.curveNext = self.curves.pop(0)
+            self.curveStop = 0
         except:
-            self.curves_actual = 0
+            self.curveR = 0
+            self.curveStart = 999999999
+            self.curveStop = 999999999
+            self.curveActive = False
+
                 
                 
         
@@ -133,6 +167,7 @@ class Train():
         self.v = self.v + self.a * self.dt
         if self.v < 0:
             self.v = 0
+        self.vkmh = self.v * 3.6
         return self.v
     
     def distance_change(self):
@@ -154,7 +189,7 @@ class Train():
             self.Fmot -= 70000
         while self.Fmot - self.FmotBefore < -70000:
             self.Fmot += 70000
-        self.Fmot = min(self.powerLookup[round(emu.v*3.6)]*1000, self.Fmot)
+        self.Fmot = min(self.powerLookup[round(self.vkmh)]*1000, self.Fmot)
         if False: #Turning off controll
             self.Fmot = 0
         
@@ -170,15 +205,15 @@ class TrainController:
         self.actualLimit = 0
         
         
-        self.pid = PID(P = 50, I=0.4, D=1.0, current_time=0)
+        self.pid = PID(P = 70, I=0.3, D=4.0, current_time=0)
         self.pid.SetPoint = 30.0
         self.pid.setSampleTime(0.1)
         self.pid.setWindup(20.0)
         
         
-        self.pid_poz = PID(P = 40.0, I=3.0, D=200.0, current_time=0)
+        self.pid_poz = PID(P = 70.0, I=10.0, D=60.0, current_time=0)
         self.pid_poz.setSampleTime(0.1)
-        self.pid_poz.setWindup(10.0)
+        self.pid_poz.setWindup(25.0)
         self.pid_poz.setPoint = 0
         
         self.predIter = 0
@@ -189,10 +224,12 @@ class TrainController:
         self.sv = []
         self.vv = []
         self.zv = []
+        self.Pv = []
+        self.vlimv = []        
         self.predReal = []
         self.predSets = []
     
-    def predict(self, emu, predAcc = -0.6):
+    def predict(self, emu, predAcc = -0.53):
             
         self.predAcc = predAcc
         self.predCalc = emu.s + (emu.v**2 - 2*predAcc*0)/(-predAcc*2)
@@ -219,7 +256,7 @@ class TrainController:
         self.predict(emu)
         if  self.predActive == 0:
             if emu.s > self.nextLimit[0]:
-                self.pid.SetPoint = self.nextLimit[1]
+                self.pid.SetPoint = self.nextLimit[1]/3.6
                 try:
                     self.nextLimit = self.limits.pop(0)
                 except:
@@ -248,18 +285,21 @@ class TrainController:
                 self.next_stop = self.stops.pop(0)
             except:
                 self.next_stop = 999999999
+                self.pid.SetPoint = 0
             self.predActive = 0
             
         self.tv.append(emu.timeCurrent)
         self.sv.append(emu.s)
-        self.vv.append(emu.v)
+        self.vv.append(emu.vkmh)
+        self.Pv.append(emu.Fmot)
+        self.vlimv.append(self.pid.SetPoint*3.6)
     def set_stops(self, stops):
         self.stops = stops
         self.next_stop = self.stops.pop(0)
     def set_limits(self, limits):
         self.limits = limits
         self.actualLimit = self.limits.pop(0)
-        self.pid.SetPoint = self.actualLimit[1]
+        self.pid.SetPoint = self.actualLimit[1]/3.6
         self.nextLimit = self.limits.pop(0)
     
 
@@ -271,126 +311,55 @@ class TrainController:
 reg = ""
 
 emu = Train()
-emu.set_power_lookup(emuPowerLookup)
+emu.set_power_lookup(powerLookup)
 emu.set_curves(curves)
 emu.set_profile(profile)
 
+
 emuCtrl = TrainController(emu)
-emuCtrl.set_stops([10000,17000,25000])
-emuCtrl.set_limits([[0,30],[2000,40],[8000,20],[15000,30],[27000,30]])
-
-
-
-    
+# emuCtrl.set_stops([10000,17000,25000])
+# emuCtrl.set_limits([[0,30],[2000,40],[8000,20],[15000,30],[27000,30]])
+emuCtrl.set_stops(stops)
+emuCtrl.set_limits(limits)
+ 
 print(emu)
 print("Opór dynamiczny: {:.2f}".format(emu.resist_dyn()))
-# tv = []
-# sv = []
-# vv = []
-# zv = []
-# rv = []
 
 
 
-
-# pid = PID(P = 40, I=0.2, D=0.0, current_time=0)
-# pid.SetPoint=30.0
-# pid.setSampleTime(0.1)
-# pid.setWindup(20.0)
-
-
-# pid_poz = PID(P = 8.0, I=2.0, D=100.0, current_time=0)
-# pid_poz.setSampleTime(0.1)
-# pid_poz.setWindup(10.0)
-# pid_poz.setPoint = 0
-
-
-
-
-
-for i in range(130000):
+for i in range(152000):
     t = i/10
-
-        
-    # pid.update(emu.v, current_time=t)
-
-    # predCalc = emu.s + (emu.v**2 - 2*predAcc*0)/(-predAcc*2)
-        
-    # if predCalc > next_stop - 3 and (predActive == 0):
-
-    #     predTime = -emu.v/predAcc
-    #     predActive = 1
-    #     predVel = emu.v
-    #     predDt = emu.dt
-    #     predSets = []
-    #     predDis = emu.s
-    #     predIter = 0
-    #     predReal = []
-        
-    #     for j in range(round(predTime/emu.dt)):
-    #         predDis += predVel*predDt + 0.5*predAcc*predDt**2
-    #         predVel += predAcc*predDt
-    #         predSets.append(predDis)
-    #     predLen = j+1
-    # if not predActive == 1 :
-    #     reg_pos = 0
-    #     emu.pid_output = pid.output
-    #     reg = "spe"
-    #     zv.append(pid.SetPoint)
-    #     s_set = 0
-    # else:
-
-        # pid_poz.SetPoint = next_stop
-        # if reg_pos == 0:
-        #     dt = emu.dt
-        #     czas = 70
-        #     reg_pos = 1
-        #     t_start = t
-        #     v = emu.v
-        #     s_set = emu.s
-        #     a = -0.6
-        # s_set += v*dt + 0.5*a*dt
-        # v += a*dt
-        # if v < 0:
-        #     v = 0
-    #     if predIter < predLen:
-    #         pid_poz.SetPoint = predSets[predIter]
-    #         predIter += 1
-    #         pid_poz.update(emu.s, current_time=t)
-            
-    #         emu.pid_output = pid_poz.output
-    #         reg = "pos"
-    #         zv.append(pid_poz.SetPoint)
-    #         predReal.append(emu.s)
-    #     else:
-    #         predActive = 2
-    
+  
     emuCtrl.control(emu)
-    emu.iteration(t)
-    # tv.append(t)
-    # sv.append(emu.s)
-    # vv.append(emu.v)
-
-    
+    emu.iteration(t) 
 
     if i%1000 == 0 and i:
-        print(emu, "t: {}, out: {:.2f} sil: {:.1f}, {}, Cal:{:.1f}, S:{}, Prof:{}".format(t, emu.pid_output, emu.Fmot/1000,reg,emuCtrl.predCalc,emuCtrl.predActive,emu.profileActual))
+        print(emu, "t: {}, out: {:.2f} sil: {:.1f}, Cal:{:.1f}, S:{}, Prof:{}".format(t, emu.pid_output, emu.Fmot/1000,emuCtrl.predCalc,emuCtrl.predActive,emu.profileActual))
     
     if emu.jerk_calc()>0.6:
-        print(emu, "t: {}, j: {:.2f} sil: {:.1f}, {}".format(t, emu.jerk_calc(), emu.Fmot/1000, reg))
+        print(emu, "t: {}, j: {:.2f} sil: {:.1f}".format(t, emu.jerk_calc(), emu.Fmot/1000))
     
 #%% Plotting
-import matplotlib
+
+# import matplotlib
 import matplotlib.pyplot as plt
 
 # Data for plotting
-fig = plt.figure(figsize=(12, 6), dpi=300)
+fig = plt.figure(figsize=(15, 10), dpi=250)
+fig2 = plt.figure(figsize=(12, 4), dpi=300)
 
-ax = fig.add_subplot(121)
-ax2 = fig.add_subplot(122)
+grid = plt.GridSpec(2, 2, wspace=0.3, hspace=0.3)
+
+ax = fig.add_subplot(grid[0, 0:])
+ax2 = fig.add_subplot(grid[1, 1])
+ax3 = fig.add_subplot(grid[1, 0])
+
+# ax3 = fig2.add_subplot()
 
 
+ax.plot(emuCtrl.tv, emuCtrl.vlimv, 'r',linewidth=3)
 ax.plot(emuCtrl.tv, emuCtrl.vv)
+
 
 ax2.plot(emuCtrl.predSets,linewidth=3)
 ax2.plot(emuCtrl.predReal,'--',linewidth=2)
@@ -401,7 +370,7 @@ ax2.plot(emuCtrl.predReal,'--',linewidth=2)
 # ax2.set_xlim([1000, 1500])
 # ax2.set_ylim([24000, 25500])
 
-
+ax3.plot(emuCtrl.Pv,'-',linewidth=1)
 
 #fig.plot(tv, zv)
 
@@ -410,9 +379,14 @@ ax.set(xlabel='time (s)', ylabel='velocity (m/s)',
 
 ax2.set(xlabel='samples (-)', ylabel='distance (m)',
       title='Last braking')
+ax2.legend(["Trajectory","Measurement"])
+
+ax3.set(xlabel='time (s)', ylabel='Froce (N)',
+      title='Force')
+
 ax.grid()
 ax2.grid()
-ax2.legend(["Trajectory","Measurement"])
+ax3.grid()
 
 plt.show()
 
