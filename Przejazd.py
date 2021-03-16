@@ -18,9 +18,10 @@ class Train():
 
 
     def __init__(self):
-        self.mass = 1210000
+        self.mass = 1215000
         self.axles_no = 8
         self.cars_no = 11
+        
         self.a = 0
         self.aBefore = 0
         self.v = 0
@@ -40,6 +41,8 @@ class Train():
         self.powerLookup = []
         self.profileActual = 0
         self.curveActive = False
+        self.curveOn = False
+        self.curveStop = 0
         
     def __str__(self):
         '''zaprezentowanie parametrów pociagu'''
@@ -59,14 +62,33 @@ class Train():
         self.speed_change()
         self.distance_change()
         
-        
 
-        
-        
             
         self.timeBefore = self.timeCurrent
         return 1
-        
+    
+    def reset_dynamic(self):
+        self.a = 0
+        self.aBefore = 0
+        self.v = 0
+        self.vkmh = 0
+        self.s = 0
+        self.t = 0
+        self.dt = 0.1
+        self.F = 0
+        self.Fmot = 0
+        self.FmotBefore = 0
+        self.Fdyn = 0
+        self.Fstat = 0
+        self.timeCurrent = 0
+        self.timeBefore = 0
+        self.pid_output = 0
+
+    def set_params(self, data_dict):
+        self.mass = data_dict.get("mass", self.mass)
+        self.axles_no = data_dict.get("axles_no", self.axles_no)
+        self.cars_no = data_dict.get("cars_no", self.cars_no)
+            
     
     def resist_dyn(self):
         # Resistance EMU or LOCO
@@ -78,7 +100,6 @@ class Train():
     def resist_stat(self, profile = 0):
         '''resistance from uphill,downhill'''
         if self.curveActive:
-            pass
             return 9.8105 * (self.profileActual + (690/self.curveR)/1000) * (self.mass)
         else:
             return 9.8105 * (self.profileActual) * (self.mass)
@@ -96,7 +117,7 @@ class Train():
                 self.profileNext[0] = 99999999
         #Checking curve
         
-        if self.s > self.curveNext[0]:
+        if  self.curveOn and self.s > self.curveNext[0] :
             self.curveStart = self.curveNext[0]
             self.curveStop = self.curveNext[1]
             self.curveR = self.curveNext[2]
@@ -333,7 +354,7 @@ for i in range(152000):
     emuCtrl.control(emu)
     emu.iteration(t) 
 
-    if i%1000 == 0 and i:
+    if i%1000000 == 0 and i:
         print(emu, "t: {}, out: {:.2f} sil: {:.1f}, Cal:{:.1f}, S:{}, Prof:{}".format(t, emu.pid_output, emu.Fmot/1000,emuCtrl.predCalc,emuCtrl.predActive,emu.profileActual))
     
     if emu.jerk_calc()>0.6:
@@ -376,6 +397,7 @@ ax3.plot(emuCtrl.Pv,'-',linewidth=1)
 
 ax.set(xlabel='time (s)', ylabel='velocity (m/s)',
       title='Train velocity')
+ax.legend(["Limit","Velocity"])
 
 ax2.set(xlabel='samples (-)', ylabel='distance (m)',
       title='Last braking')
