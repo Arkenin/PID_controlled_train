@@ -6,7 +6,7 @@ Created on Wed Feb 24 14:31:37 2021
 """
 from PID import PID
 import math
-from data_loco import profile, powerLookup, curves, limits, stops
+from dataLocoGen import profile, powerLookup, curves, limits, stops
 
 emuPowerLookupTest = [900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 882, 860, 840, 820, 802, 784, 767, 751, 735, 720, 706, 692, 678, 666, 653, 641, 630, 619, 608, 598, 588, 578, 569, 560, 551, 543, 535, 527, 519, 511, 504, 497, 490, 483, 477, 470, 464, 458, 452, 447, 441, 436, 430, 425, 420, 415, 410, 406, 401, 396, 392, 388, 383, 379, 375, 371, 368, 364, 360, 356, 353, 349, 346, 343, 339, 336, 333, 330, 327, 324, 321, 318, 315, 312, 309, 307, 304, 302, 299, 296, 294, 292, 289, 287, 285, 282, 280, 278, 276, 273, 271, 269, 267, 265, 263, 261, 259, 258, 256, 254, 252, 250, 248, 247, 245, 243, 242, 240, 238, 237, 235, 234, 232, 231, 229, 228, 226, 225, 223, 222, 221, 219, 218, 216, 215, 214, 213, 211, 210, 209, 208]
 
@@ -45,7 +45,6 @@ class Train():
         self.curveStop = 0
         
     def __str__(self):
-        '''zaprezentowanie parametrów pociagu'''
         return "s: {:.3f} v:{:.3f} a:{:.3f} dt:{:.3f}".format(self.s, self.v, self.a, self.dt)
 
         
@@ -61,9 +60,7 @@ class Train():
         self.acceleration()
         self.speed_change()
         self.distance_change()
-        
-
-            
+                    
         self.timeBefore = self.timeCurrent
         return 1
     
@@ -92,8 +89,8 @@ class Train():
     
     def resist_dyn(self):
         # Resistance EMU or LOCO
-        # self.Fdyn = ((6.5+(1.5*(self.v*0.36)))*self.mass/1000)+(150*self.axles_no) + 10*(2.7+self.cars_no)*((self.v*0.36)**2)
-        self.Fdyn = ((1.2+((self.vkmh)**2/4000))*self.mass/1000)*10; 
+        self.Fdyn = ((6.5+(1.5*(self.v*0.36)))*self.mass/1000)+(150*self.axles_no) + 10*(2.7+self.cars_no)*((self.v*0.36)**2)
+        # self.Fdyn = ((1.2+((self.vkmh)**2/4000))*self.mass/1000)*10; 
         return self.Fdyn
         pass
     
@@ -344,11 +341,9 @@ emuCtrl.set_stops(stops)
 emuCtrl.set_limits(limits)
  
 print(emu)
-print("Opór dynamiczny: {:.2f}".format(emu.resist_dyn()))
 
 
-
-for i in range(152000):
+for i in range(250000):
     t = i/10
   
     emuCtrl.control(emu)
@@ -371,15 +366,15 @@ fig2 = plt.figure(figsize=(12, 4), dpi=300)
 
 grid = plt.GridSpec(2, 2, wspace=0.3, hspace=0.3)
 
-ax = fig.add_subplot(grid[0, 0:])
+ax1 = fig.add_subplot(grid[0, 0:])
 ax2 = fig.add_subplot(grid[1, 1])
 ax3 = fig.add_subplot(grid[1, 0])
 
 # ax3 = fig2.add_subplot()
 
 
-ax.plot(emuCtrl.tv, emuCtrl.vlimv, 'r',linewidth=3)
-ax.plot(emuCtrl.tv, emuCtrl.vv)
+ax1.plot(emuCtrl.tv, emuCtrl.vlimv, 'r',linewidth=3)
+ax1.plot(emuCtrl.tv, emuCtrl.vv)
 
 
 ax2.plot(emuCtrl.predSets,linewidth=3)
@@ -395,18 +390,16 @@ ax3.plot(emuCtrl.Pv,'-',linewidth=1)
 
 #fig.plot(tv, zv)
 
-ax.set(xlabel='time (s)', ylabel='velocity (m/s)',
-      title='Train velocity')
-ax.legend(["Limit","Velocity"])
+ax1.set(xlabel='time (s)', ylabel='velocity (m/s)', title='Train velocity')
+ax1.legend(["Limit","Velocity"])
 
-ax2.set(xlabel='samples (-)', ylabel='distance (m)',
-      title='Last braking')
+ax2.set(xlabel='samples (-)', ylabel='distance (m)', title='Last braking')
 ax2.legend(["Trajectory","Measurement"])
 
 ax3.set(xlabel='time (s)', ylabel='Froce (N)',
       title='Force')
 
-ax.grid()
+ax1.grid()
 ax2.grid()
 ax3.grid()
 
